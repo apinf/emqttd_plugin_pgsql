@@ -33,7 +33,9 @@
 start(_StartType, _StartArgs) ->
     {ok, Sup} = emqttd_plugin_pgsql_sup:start_link(),
     SuperQuery = parse_query(application:get_env(?APP, superquery, undefined)),
-    ok = register_auth_mod(SuperQuery), ok = register_acl_mod(SuperQuery),
+    ok = register_auth_mod(SuperQuery),
+    ok = register_acl_mod(SuperQuery),
+    ok = register_ratelimit_mod(SuperQuery),
     {ok, Sup}.
 
 register_auth_mod(SuperQuery) ->
@@ -49,10 +51,21 @@ register_acl_mod(SuperQuery) ->
         emqttd_access_control:register_mod(acl, emqttd_acl_pgsql, AclEnv)
     end).
 
+register_ratelimit_mod(SuperQuery) ->
+  with_rl_enabled(
+    fun(RlQuery) ->
+        {ok, DefaultRl} = application:get_env(?APP, rl_default),
+        RateLimitEnv = {SuperQuery, parse_query(RlQuery), DefaultRl},
+        emqttd:hook('client.connected', fun emqttd_ratelimit_pgsql:set_rl/3, RateLimitEnv)
+    end).
+
 prep_stop(State) ->
     emqttd_access_control:unregister_mod(auth, emqttd_auth_pgsql),
     with_acl_enabled(fun(_AclQuery) ->
         emqttd_access_control:unregister_mod(acl, emqttd_acl_pgsql)
+    end),
+    with_rl_enabled(fun(_) ->
+        emqttd:unhook('client.connected', fun emqttd_ratelimit_pgsql:set_rl/3)
     end),
     State.
 
@@ -65,3 +78,8 @@ with_acl_enabled(Fun) ->
         undefined      -> ok
     end.
 
+with_rl_enabled(Fun) ->
+    case application:get_env(?APP, ratelimitquery) of
+        {ok, RlQuery} -> Fun(RlQuery);
+        undefined      -> ok
+    end.

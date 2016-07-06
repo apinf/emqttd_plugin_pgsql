@@ -26,3 +26,10 @@ VALUES
 	(6,1,'127.0.0.1',NULL,NULL,2,'#'),
 	(7,1,NULL,'dashboard',NULL,1,'$SYS/#');
 
+CREATE TABLE mqtt_ratelimit (
+  id SERIAL primary key,
+  username character varying(100),
+  clientid character varying(100),
+  burst integer,
+  rate integer
+);
